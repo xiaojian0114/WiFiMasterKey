@@ -127,9 +127,9 @@ function renderWifiList() {
         <div class="wifi-actions">
           ${isConnected
             ? '<button class="btn btn-sm btn-secondary" onclick="disconnectWifi()">断开</button>'
-            : '<button class="btn btn-sm btn-primary" onclick="showConnectDialog(\'' + escapeHtml(net.SSID) + '\')">连接</button>'
+            : `<button class="btn btn-sm btn-primary" data-action="connect" data-ssid="${escapeAttr(net.SSID)}">连接</button>`
           }
-          <button class="btn btn-sm btn-secondary" onclick="showQRCode(\'' + escapeHtml(net.SSID) + '\')">二维码</button>
+          <button class="btn btn-sm btn-secondary" data-action="qrcode" data-ssid="${escapeAttr(net.SSID)}">二维码</button>
         </div>
       </div>
     `;
@@ -141,6 +141,20 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
+function escapeAttr(text) {
+  return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// 事件委托处理动态按钮点击
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const ssid = btn.dataset.ssid;
+  const action = btn.dataset.action;
+  if (action === 'connect') showConnectDialog(ssid);
+  if (action === 'qrcode') showQRCode(ssid);
+});
 
 function setFilter(filter) {
   currentFilter = filter;
@@ -186,22 +200,38 @@ async function updateConnectionStatus() {
 }
 
 async function showConnectDialog(ssid) {
-  if (savedProfiles.includes(ssid)) {
-    const result = await window.electronAPI.connectWifi(ssid);
-    showToast(result.message, result.success ? "success" : "error");
-    if (result.success) {
-      setTimeout(updateConnectionStatus, 1000);
-    }
-  } else {
-    const password = prompt(`连接 ${ssid}\n请输入密码:`);
-    if (password !== null) {
-      const result = await window.electronAPI.connectWifi(ssid, password);
-      showToast(result.message, result.success ? "success" : "error");
-      if (result.success) {
-        setTimeout(updateConnectionStatus, 1000);
-      }
-    }
+  // 创建自定义密码输入弹窗
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal" onclick="event.stopPropagation()">
+      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+      <h3 class="modal-title">连接 WiFi</h3>
+      <p style="margin-bottom:12px;color:var(--text-secondary)">${escapeHtml(ssid)}</p>
+      <div class="password-wrapper" style="margin-bottom:16px">
+        <input type="password" id="connectPassword" placeholder="输入密码" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary)">
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">取消</button>
+        <button class="btn btn-primary" onclick="confirmConnect('${ssid.replace(/'/g, "\\'")}')">连接</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.classList.add('active');
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+}
+
+async function confirmConnect(ssid) {
+  const password = document.getElementById('connectPassword').value;
+  const modal = document.querySelector('.modal-overlay:last-child');
+  
+  const result = await window.electronAPI.connectWifi(ssid, password || null);
+  showToast(result.message, result.success ? "success" : "error");
+  if (result.success) {
+    setTimeout(updateConnectionStatus, 1000);
   }
+  if (modal) modal.remove();
 }
 
 async function quickConnect() {
@@ -251,29 +281,77 @@ async function showQRCode(ssid) {
   const qrImage = document.getElementById("qrImage");
   const qrTitle = document.getElementById("qrTitle");
   const qrInfo = document.getElementById("qrInfo");
+  const qrPasswordList = document.getElementById("qrPasswordList");
 
   qrTitle.textContent = ssid;
   qrImage.src = "";
-  qrInfo.textContent = "正在获取密码...";
+  qrInfo.textContent = "正在破解密码...";
+  qrPasswordList.innerHTML = '<div style="text-align:center;padding:20px"><div class="spinner"></div></div>';
   modal.classList.add("active");
 
   try {
-    const res = await window.electronAPI.getWifiPassword(ssid);
+    // 先尝试从系统配置获取
+    const savedRes = await window.electronAPI.getWifiPassword(ssid);
     qrData.ssid = ssid;
-    qrData.password = res.password || "";
+    qrData.password = savedRes.password || "";
     qrData.hidden = false;
 
-    if (res.success && res.password) {
-      qrInfo.textContent = `密码: ${res.password}`;
-      const qrRes = await window.electronAPI.generateQR(ssid, res.password);
+    if (savedRes.success && savedRes.password) {
+      qrInfo.innerHTML = `<span style="color:#66ff99">密码已获取</span>`;
+      qrPasswordList.innerHTML = `
+        <div class="password-item found">
+          <span class="password-label">已保存密码</span>
+          <span class="password-value">${savedRes.password}</span>
+        </div>
+      `;
+      const qrRes = await window.electronAPI.generateQR(ssid, savedRes.password);
       if (qrRes.success && qrRes.dataUrl) {
         qrImage.src = qrRes.dataUrl;
       }
     } else {
-      qrInfo.textContent = "未找到保存的密码";
+      // 尝试破解
+      qrInfo.textContent = "尝试破解密码...";
+      const crackRes = await window.electronAPI.crackWifiPassword(ssid);
+      
+      if (crackRes.success && crackRes.results && crackRes.results.length > 0) {
+        qrInfo.innerHTML = `<span style="color:#ffcc66">破解结果（仅供参考）</span>`;
+        
+        // 显示密码列表
+        qrPasswordList.innerHTML = crackRes.results.slice(0, 50).map(r => `
+          <div class="password-item">
+            <span class="password-label">${r.method}</span>
+            <span class="password-value">${r.password}</span>
+            <button class="btn btn-sm btn-primary" onclick="useThisPassword('${r.ssid}', '${r.password}')">连接</button>
+          </div>
+        `).join('');
+        
+        // 用第一个密码生成二维码
+        const firstPwd = crackRes.results[0].password;
+        const qrRes = await window.electronAPI.generateQR(ssid, firstPwd);
+        if (qrRes.success && qrRes.dataUrl) {
+          qrImage.src = qrRes.dataUrl;
+        }
+      } else {
+        qrInfo.textContent = "未找到密码";
+        qrPasswordList.innerHTML = '<div class="empty-state"><p>无法获取或破解密码</p></div>';
+      }
     }
   } catch (e) {
     qrInfo.textContent = "获取密码失败: " + e.message;
+    qrPasswordList.innerHTML = '';
+  }
+}
+
+function useThisPassword(ssid, password) {
+  document.getElementById("qrModal").classList.remove("active");
+  confirmConnect(ssid, password);
+}
+
+async function confirmConnect(ssid, password) {
+  const result = await window.electronAPI.connectWifi(ssid, password);
+  showToast(result.message, result.success ? "success" : "error");
+  if (result.success) {
+    setTimeout(updateConnectionStatus, 1000);
   }
 }
 
@@ -443,15 +521,20 @@ window.onload = async () => {
   }
 
   await showSavedProfiles();
+  await scanWifi();
   await updateConnectionStatus();
   await loadHistory();
 
   window.electronAPI.onTrayScan(() => scanWifi());
   window.electronAPI.onOpenSettings(() => document.getElementById("settingsModal").classList.add("active"));
-
   window.electronAPI.onThemeChanged((theme) => {
     document.documentElement.setAttribute("data-theme", theme);
   });
+
+  // 监听菜单事件
+  window.electronAPI.onMenuScan(() => scanWifi());
+  window.electronAPI.onMenuExport(() => exportData('txt'));
+  window.electronAPI.onMenuImport(() => importData());
 };
 
 function saveSettings() {

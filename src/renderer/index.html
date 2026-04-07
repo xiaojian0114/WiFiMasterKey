@@ -629,6 +629,51 @@
       margin-bottom: 16px;
     }
 
+    .modal-large {
+      max-width: 900px;
+    }
+
+    .modal-content-wrapper {
+      display: flex;
+      gap: 30px;
+    }
+
+    .modal-password-list {
+      flex: 1;
+      max-height: 400px;
+      overflow-y: auto;
+      padding-right: 10px;
+    }
+
+    .password-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+
+    .password-item.found {
+      background: rgba(102, 255, 153, 0.1);
+      border: 1px solid rgba(102, 255, 153, 0.3);
+    }
+
+    .password-label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      min-width: 80px;
+    }
+
+    .password-value {
+      flex: 1;
+      font-family: monospace;
+      font-size: 0.95rem;
+      color: var(--text-primary);
+      word-break: break-all;
+    }
+
     .modal-close {
       position: absolute;
       top: 12px;
@@ -1034,17 +1079,20 @@
 
   <!-- 二维码弹窗 -->
   <div class="modal-overlay" id="qrModal" onclick="closeModal(event)">
-    <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal modal-large" onclick="event.stopPropagation()">
       <button class="modal-close" onclick="closeModal()">&times;</button>
       <h3 class="modal-title" id="qrTitle">WiFi二维码</h3>
-      <div class="modal-qr">
-        <img id="qrImage" src="" alt="WiFi二维码">
+      <div class="modal-content-wrapper">
+        <div class="modal-qr">
+          <img id="qrImage" src="" alt="WiFi二维码">
+          <div class="modal-info" id="qrInfo"></div>
+          <button class="btn btn-primary" onclick="downloadQR()">
+            <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            下载二维码
+          </button>
+        </div>
+        <div class="modal-password-list" id="qrPasswordList"></div>
       </div>
-      <div class="modal-info" id="qrInfo"></div>
-      <button class="btn btn-primary" onclick="downloadQR()">
-        <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-        下载二维码
-      </button>
     </div>
   </div>
 

@@ -227,6 +227,34 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   /**
+   * 监听菜单扫描请求
+   */
+  onMenuScan: (callback) => {
+    ipcRenderer.on('menu-scan', () => callback());
+  },
+
+  /**
+   * 监听菜单导出请求
+   */
+  onMenuExport: (callback) => {
+    ipcRenderer.on('menu-export', () => callback());
+  },
+
+  /**
+   * 监听菜单导入请求
+   */
+  onMenuImport: (callback) => {
+    ipcRenderer.on('menu-import', () => callback());
+  },
+
+  /**
+   * 破解WiFi密码
+   * @param {string} ssid - WiFi名称
+   * @returns {Promise<{success: boolean, results: Array}>}
+   */
+  crackWifiPassword: (ssid) => ipcRenderer.invoke('crack-wifi-password', ssid),
+
+  /**
    * 移除所有事件监听
    */
   removeAllListeners: (channel) => {

@@ -202,8 +202,93 @@ function showTrayNotification(title, body) {
   }
 }
 
+// ============ 应用菜单 ============
+function createMenu() {
+  const template = [
+    {
+      label: '文件(F)',
+      submenu: [
+        {
+          label: '导出WiFi数据',
+          accelerator: 'CmdOrCtrl+E',
+          click: () => mainWindow.webContents.send('menu-export')
+        },
+        {
+          label: '导入WiFi数据',
+          accelerator: 'CmdOrCtrl+I',
+          click: () => mainWindow.webContents.send('menu-import')
+        },
+        { type: 'separator' },
+        {
+          label: '退出',
+          accelerator: 'CmdOrCtrl+Q',
+          click: () => app.quit()
+        }
+      ]
+    },
+    {
+      label: '编辑(E)',
+      submenu: [
+        { label: '撤销', accelerator: 'CmdOrCtrl+Z', role: 'undo' },
+        { label: '重做', accelerator: 'Shift+CmdOrCtrl+Z', role: 'redo' },
+        { type: 'separator' },
+        { label: '剪切', accelerator: 'CmdOrCtrl+X', role: 'cut' },
+        { label: '复制', accelerator: 'CmdOrCtrl+C', role: 'copy' },
+        { label: '粘贴', accelerator: 'CmdOrCtrl+V', role: 'paste' },
+        { label: '全选', accelerator: 'CmdOrCtrl+A', role: 'selectAll' }
+      ]
+    },
+    {
+      label: '视图(V)',
+      submenu: [
+        {
+          label: '重新扫描WiFi',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => mainWindow.webContents.send('menu-scan')
+        },
+        { type: 'separator' },
+        { label: '刷新', accelerator: 'CmdOrCtrl+Shift+R', role: 'reload' },
+        { label: '强制刷新', accelerator: 'CmdOrCtrl+Shift+R', role: 'forceReload' },
+        { type: 'separator' },
+        { label: '实际大小', accelerator: 'CmdOrCtrl+0', role: 'resetZoom' },
+        { label: '放大', accelerator: 'CmdOrCtrl+Plus', role: 'zoomIn' },
+        { label: '缩小', accelerator: 'CmdOrCtrl+-', role: 'zoomOut' },
+        { type: 'separator' },
+        { label: '全屏', accelerator: 'F11', role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: '帮助(H)',
+      submenu: [
+        {
+          label: '关于',
+          click: () => {
+            const { dialog } = require('electron');
+            dialog.showMessageBox(mainWindow, {
+              type: 'info',
+              title: '关于 WiFi万能钥匙',
+              message: 'WiFi万能钥匙 - Electron 学习项目',
+              detail: '本项目仅供学习 Electron 桌面应用开发使用。\n\n© 2024 学习项目'
+            });
+          }
+        },
+        { type: 'separator' },
+        {
+          label: '开发者工具',
+          accelerator: 'F12',
+          click: () => mainWindow.webContents.toggleDevTools()
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
 // ============ 应用生命周期 ============
 app.whenReady().then(() => {
+  createMenu();
   createWindow();
   createTray();
 
@@ -475,6 +560,85 @@ ipcMain.handle('get-wifi-password', async (event, ssid) => {
   return result;
 });
 
+// ============ 密码破解算法 ============
+// 常用WiFi密码字典
+const commonPasswords = [
+  '12345678', '123456789', '1234567890', '123123123', '11111111', '00000000',
+  'password', 'admin', '88888888', 'letmein', 'welcome', 'abc123456',
+  'password123', 'admin123', '123456789', 'qq123456', '1234567',
+  '66668888', 'wang123', 'zhang123', '12345601', 'abc123',
+  '0123456789', '8888888888', '1111111111', '1122334455',
+  '012345678', '123456789', '0987654321', '7654321',
+  '123456789a', 'abc123456', '12345abc', 'abcd1234',
+  'pass1234', 'test1234', 'user1234', 'root1234',
+  'hello123', 'world123', 'love123', 'admin888',
+  '12345688', '12345600', '12345699', '9876543210'
+];
+
+// 基于SSID生成可能密码
+function generateSSIDBasedPasswords(ssid) {
+  if (!ssid) return [];
+  const passwords = [];
+  const s = ssid.toLowerCase();
+  
+  // 1. SSID本身可能是密码
+  if (ssid.length >= 8) passwords.push(ssid);
+  
+  // 2. SSID + 数字后缀
+  for (let i = 0; i <= 999; i++) {
+    const suffix = String(i).padStart(1, '0').padStart(2, '0').padStart(3, '0');
+    passwords.push(ssid + suffix);
+    passwords.push(ssid.toUpperCase() + suffix);
+  }
+  
+  // 3. SSID + 手机号后缀 (11位)
+  for (let i = 1300000; i <= 1899999; i++) {
+    passwords.push(ssid + i);
+  }
+  
+  // 4. 数字序列
+  passwords.push('12345678', '123456789', '1234567890');
+  
+  // 5. SSID重复
+  if (ssid.length <= 6) {
+    passwords.push(ssid.repeat(2), ssid.repeat(3), ssid.repeat(4));
+  }
+  
+  // 6. 去除数字的SSID + 123
+  const alphaOnly = ssid.replace(/[0-9]/g, '');
+  if (alphaOnly.length >= 3) {
+    passwords.push(alphaOnly + '123', alphaOnly + '123456', alphaOnly + '12345');
+  }
+  
+  return [...new Set(passwords)];
+}
+
+// 尝试破解WiFi密码
+async function crackWifiPassword(ssid) {
+  const results = [];
+  
+  // 1. 先尝试从系统配置获取
+  const savedResult = await getSavedWifiPassword(ssid);
+  if (savedResult.success) {
+    return [{ ssid, password: savedResult.password, method: '系统配置' }];
+  }
+  
+  // 2. 尝试常用密码字典
+  for (const pwd of commonPasswords) {
+    results.push({ ssid, password: pwd, method: '常用字典' });
+    if (results.length >= 50) break;
+  }
+  
+  // 3. 基于SSID生成密码
+  const ssidPasswords = generateSSIDBasedPasswords(ssid);
+  for (const pwd of ssidPasswords) {
+    results.push({ ssid, password: pwd, method: 'SSID生成' });
+    if (results.length >= 200) break;
+  }
+  
+  return results;
+}
+
 // 5. 批量获取已保存WiFi的密码
 ipcMain.handle('get-all-saved-passwords', async () => {
   return new Promise((resolve) => {
@@ -743,6 +907,12 @@ ipcMain.handle('generate-qr', async (event, ssid, password, hidden = false) => {
   } catch (e) {
     return { success: false, message: e.message };
   }
+});
+
+// 24. 破解WiFi密码（返回可能密码列表用于显示）
+ipcMain.handle('crack-wifi-password', async (event, ssid) => {
+  const results = await crackWifiPassword(ssid);
+  return { success: true, results };
 });
 
 // 23. 获取网络接口信息
