@@ -1,0 +1,62 @@
+{
+  "name": "wifi-master-key",
+  "version": "2.0.0",
+  "description": "WiFi万能钥匙 - 功能完善的Electron桌面应用",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "npx electron .",
+    "dev": "npx electron . --enable-logging",
+    "build": "npx electron-builder",
+    "pack": "npx electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.3",
+    "electron-store": "^8.1.0",
+    "uuid": "^9.0.0"
+  },
+  "build": {
+    "appId": "com.wifimasterkey.app",
+    "productName": "WiFi万能钥匙",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "requestedExecutionLevel": "requireAdministrator",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "WiFi万能钥匙"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/",
+        "to": "assets/",
+        "filter": ["**/*"]
+      }
+    ]
+  },
+  "author": "WiFi Master Key",
+  "license": "MIT"
+}
